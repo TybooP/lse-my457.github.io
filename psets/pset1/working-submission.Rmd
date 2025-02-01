@@ -15,17 +15,18 @@ knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, linewidth=60)
 
 # you can include your libraries here:
 library(tidyverse)
+install.packages("report")
+library(report)
 
 # and any other options in R:
 options(scipen=999)
 
 ```
 
-# Concepts
+# 1 Concepts
 
 We going to talk about a simple study of the effect of treatment $$
-D_i \in \{0,1\} \text{ on } Y_i \text{ for all } i \in \{1,2,3,\dots,N\}
-$$
+D_i \in \{0,1\} \text{ on } Y_i \text{ for all } i \in \{1,2,3,\dots,N\}$$
 
 ## 1.1
 
@@ -41,15 +42,249 @@ We would expect these to be unequal when the treatment is not randomly assigned.
 
 ## 1.3
 
-Random assignment into our treatment (D=1) and control (D=0) groups ensures that the characteristics of the population of interest are also randomly distributed. This helps us identify the average treatment effect (ATE) because we can compare the average outcomes of the treatment and control groups and we dont have to worry about the confounding variables.
+By using a random assignment for our treatment (D=1) and control (D=0) groups helps us identify the average treatment effect (ATE) because we can compare the group level averages of potential outcomes of treatment and control and we dont have to worry about selection bias.
 
 \clearpage
 
-# Simulations
+# 2 Simulations
 
 ## 2.1
 
+```{r generate-data}
+set.seed(123)
+n <- 500
+tau <- 5000
 
+data <- data.frame(
+Age = rnorm(n, mean = 42, sd = 10),
+Education = sample(1:4, n, replace = TRUE),
+Y0 = rnorm(n, mean = 50000, sd = 10000)
+)
+data <- data %>% mutate(
+Y1 = Y0 + tau,
+D = sample(c(0, 1), n, replace = TRUE),
+Y = ifelse(D== 1, Y1, Y0)
+)
+
+data
+```
+
+The code above generates a dataset with 500 observations (n), a treatment effect of 5000 (tau), and four variables: Age with mean of 42 years of age with a standard deviation of 10 years, Education with 4 different categories represented by numbers 1 to 4, the binary variable D which is the treatment assignment and Y outcome variable (Y). Because we simulated the data we can also simulate both potential outcomes for each observation which are the Y1 and Y0 variables. We set the seed to 123 to ensure reproducibility.
+
+## 2.2
+
+```{r explore-data, warning=FALSE, fig.width=8, fig.height=6}}
+# Perform t-test for Age
+t_test_age <- t.test(Age ~ D, data = data)
+
+# Perform t-test for Education
+t_test_edu <- t.test(Education ~ D, data = data)
+
+# Print results using report package
+report::report(t_test_age)
+report::report(t_test_edu)
+
+```
+
+Both Age and Education are balanced across treatment (D=1) and control (D=0) groups, as there are no statistically significant differences in means. This supports the randomization assumption that the two groups are comparable.
+
+## 2.3
+
+First lets plot the distribution of the potential outcomes $Y_0$ and $Y_1$.
+
+```{r visualise-potential-outcomes, fig.width=8, fig.height=6}
+data %>% 
+  ggplot(aes(x = Y0)) +
+  geom_density(aes(fill = "Y0"), alpha = 0.5) +
+  geom_density(aes(x = Y1, fill = "Y1"), alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Potential Outcomes", x = "Y", y = "Density")
+```
+
+To figure out the difference in means between the potential outcomes $Y_0$ and $Y_1$ we can use the following code:
+
+```{r difference-in-means}
+# Calculate the difference in means between Y1 and Y0
+diffINmeans <- mean(data$Y[data$D==1]) - mean(data$Y[data$D==0])
+diffINmeans
+```
+
+Given that the treatment effect (tau) was set to 5000, but the estimated effect is 4181.018, the estimate is  lower than the true effect. The discrepancy may be due to randomization variability or sampling variability.
+```{r}
+report::report(t.test(Y ~ D, data = data))
+```
+
+## 2.4
+
+```{r visualise-the-distribution of-Y-by-treatment-status, fig.width=8, fig.height=6}
+# Plot the distribution of Y conditional on D
+ggplot(data, aes(x = Y, fill = as.factor(D))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribution of Y by Treatment Status",
+       x = "Outcome (Y)",
+       y = "Density",
+       fill = "Treatment (D)") +
+  theme_minimal()
+```
+
+```{r}
+diffInMeans <- mean(data$Y[data$D == 1]) - mean(data$Y[data$D == 0])
+print(diffInMeans)
+
+lm_model <- lm(Y ~ D, data = data)
+summary(lm_model)
+
+```
+
+Both implementation gave the same 4181.018 results.  
+
+## 2.5
+
+```{r}
+# Set parameters
+n_simulations <- 1000
+tau <- 5000
+n <- 500
+
+# Initialize vector to store deviations
+ate_differences <- numeric(n_simulations)
+
+# Run 1,000 simulations
+for (i in 1:n_simulations) {
+  # Generate new random dataset
+  data <- data.frame(
+    Age = rnorm(n, mean = 42, sd = 10),
+    Education = sample(1:4, n, replace = TRUE),
+    Y0 = rnorm(n, mean = 50000, sd = 10000)
+  )
+  
+  # Apply intervention effects
+  data <- data %>%
+    mutate(
+      Y1 = Y0 + tau,
+      D = sample(c(0, 1), n, replace = TRUE),  # Randomly assign treatment
+      Y = ifelse(D == 1, Y1, Y0)               # Observed outcome
+    )
+  
+  # Estimate ATE (difference-in-means)
+  estimated_ate <- mean(data$Y[data$D == 1]) - mean(data$Y[data$D == 0])
+  
+  # Store the difference from true ATE
+  ate_differences[i] <- estimated_ate - tau
+}
+
+# Compute the mean of the differences
+mean_diff <- mean(ate_differences)
+
+# Plot histogram of ATE differences
+ggplot(data.frame(ate_differences), aes(x = ate_differences)) +
+  geom_histogram(color = "black", fill = "blue", bins = 30, alpha = 0.7) +
+  geom_vline(aes(xintercept = mean_diff), color = "red", linetype = "dashed") +
+  labs(
+    title = "Distribution of Estimated ATE Differences",
+    x = "Estimated ATE - True ATE",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+After simulating 1000 data generations, the estimated ATE averageis really close to 0.
+
+# 3. Replication
+
+## 3.1
+
+```{r}
+#install.packages("readstata13")
+library(readstata13)
+
+# Load the dta data
+electwomen_data <- read.dta13("how_to_elect_more_women.dta")
+
+# Create sd_onefem2014 dummy variable from prop_sd_fem2014
+electwomen_data <- electwomen_data %>%
+  mutate(sd_onefem2014 = ifelse(prop_sd_fem2014 > 0, 1, 0))
+```
+
+## 3.2
+
+```{r}
+# Ensure there are no missing values
+data <- electwomen_data %>% mutate(prop_sd_fem2014 = ifelse(is.na(prop_sd_fem2014), 0, prop_sd_fem2014))
+
+# Group by 'condition' and calculate proportions correctly
+condition_summary <- electwomen_data %>%
+  group_by(condition) %>%
+  summarise(
+    precinct_count = n(),  # Number of precincts in each condition group
+    sum_fem2014 = sum(prop_sd_fem2014, na.rm = TRUE),  # Sum of elected women proportion
+    proportion_fem2014 = sum_fem2014 / sum(data$prop_sd_fem2014, na.rm = TRUE)  # Proportion per condition
+  )
+
+# Print results
+print(condition_summary)
+```
+
+## 3.3
+
+```{r}
+#test balance in pre-treatment variables of "agecat" and "race" betwen different conditions
+# Define pre-treatment variables
+pre_treatment_vars <- c("agecat", "race")
+
+# Define unique conditions (excluding NA)
+conditions <- c("Control", "Demand", "Supply", "Supply+Demand")
+
+# Function to perform pairwise t-tests
+perform_t_test <- function(var, group1, group2) {
+  test_result <- electwomen_data %>%
+    filter(condition %in% c(group1, group2)) %>%
+    t.test(reformulate("condition", var), data = .)
+  
+  cat("\nT-test for", var, "between", group1, "and", group2, "\n")
+  print(test_result)
+}
+
+# Run t-tests for each variable between control and each treatment group
+for (var in pre_treatment_vars) {
+  for (group in conditions[conditions != "Control"]) {
+    perform_t_test(var, "Control", group)
+  }
+}
+```
+
+No t test is significant, so we can say that the randomization was successful.
+
+## 3.4
+
+```{r}
+library(dplyr)
+
+# Function to run linear regression for ATE estimation
+estimate_ate <- function(treatment_group) {
+  # Subset to only include Control and the current treatment group
+  subset_data <- electwomen_data %>%
+    filter(condition %in% c("Control", treatment_group)) %>%
+    mutate(treatment = ifelse(condition == treatment_group, 1, 0))  # Convert to binary
+
+  # Run linear regression
+  model <- lm(sd_onefem2014 ~ treatment, data = subset_data)
+  
+  # Print results
+  cat("\nATE Estimate for", treatment_group, "vs. Control:\n")
+  print(summary(model))
+}
+
+# Run regressions for each treatment group
+treatment_groups <- c("Demand", "Supply", "Supply+Demand")
+
+for (treatment in treatment_groups) {
+  estimate_ate(treatment)
+}
+
+```
+
+## 3.5
 
 
 
