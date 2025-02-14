@@ -152,9 +152,10 @@ We consider the three most frequently seen estimation strategies for selection-o
 
 ##### Seminar: Selection on Observables
 
-- [Seminar Code](seminars/seminar2/coding/Class02-MatchingAndWeighting.Rmd)
-- [Seminar Paper](seminars/seminar2/paper/MY457_seminar2_paper.pdf) 
-- [Seminar Questions](seminars/seminar2/paper/MY457_seminar2_questions.pdf)
+- [Seminar Code](seminars/seminar2/seminar2_soo.Rmd)
+- [Seminar Paper 1](seminars/seminar2/seminar2_paper1.pdf)
+- [Seminar Paper 2 (response to paper 1)](seminars/seminar2/seminar2_paper2.pdf) 
+- [Seminar Questions](seminars/seminar2/seminar2_questions.pdf)
 
 ##### Readings
 * MHE: Sections 3.2 and 3.3
