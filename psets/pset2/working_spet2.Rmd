@@ -1,0 +1,397 @@
+---
+title: "MY457: Problem Set Template"
+date:  "`r format(Sys.time(), '%a/%d/%b')`"
+author: "40714"
+always_allow_html: true
+output: 
+  bookdown::pdf_document2:
+    toc: false
+---
+
+```{r setup, include = FALSE}
+# this chunk contains code that sets global options for the entire .Rmd. 
+# we use include=FALSE to suppress it from the top of the document, but it will still appear in the appendix. 
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, linewidth=60)
+
+# you can include your libraries here:
+library(tidyverse)
+
+# and any other options in R:
+options(scipen=999)
+
+```
+
+# Concepts
+
+## 1.1
+
+\((Y_1, Y_0) \perp D | X\) means that the potential outcomes \(Y_1\) and \(Y_0\) are independent of \(D\) (our treatment) **conditional on \(X\)**. Here, \(X\) represents all the potential **pre-treatment covariates**.
+
+However, this does not mean that \((Y_1, Y_0) \perp X\), because **pre-treatment covariates can influence the potential outcomes** for both the treatment and control groups.
+
+## 1.2
+
+The underlying **assumptions for conditional ignorability** are that the potential outcomes \(Y_1\) and \(Y_0\) are **independent of treatment assignment \(D\)**, given the pre-treatment covariates. This means that, after controlling for these covariates, treatment assignment can be considered as-if random.
+
+For **common support**, the assumption is that **all units have a non-zero probability of being assigned to either the treatment or control group**. If any units have a probability of zero, this assumption is violated, as there would be no comparable treated or control units for them.
+
+## 1.3
+
+When we use **matching**, it is possible to use the same control unit for multiple treated units. However, this is **not ideal**, as it is unlikely that a single control unit will be a perfect match for multiple treated individuals—especially as the dimensionality of pre-treatment covariates increases.
+
+Using one control unit for multiple treated units means that this control was the **closest match** available, but it does not necessarily indicate **how close they actually are**. This issue becomes particularly problematic in **high-dimensional settings**, where finding truly comparable units is difficult. 
+
+As a result, we may end up **comparing potential outcomes for units that are not sufficiently similar**, making it difficult to determine whether differences in outcomes are due to the treatment itself or some **other unobserved factors**.
+
+
+# Simulations
+
+## 2.1
+
+```{r simulate-data}
+set.seed(123)
+n_obs <- 10000
+tau <- 25000
+# Create the dataset
+U1 <- rbinom(n_obs, 1, 0.5)
+U2 <- rbinom(n_obs, 1, 0.5)
+X2 <- sample(1:50, n_obs, replace = TRUE)
+X1 <- 10 + 1500*U1 + 1500*U2 + rnorm(n_obs, mean = 0, sd = 100)
+Y0 <- 20000 + 1000*X2 + 1500*U2 + rnorm(n_obs, mean = 0, sd = 1000)
+Y1 <- Y0 + tau
+prob_d <- pnorm(X2, mean = 50, sd = 25) + 0.5*U1
+prob_d <- pmin(prob_d, 1)
+D <- rbinom(n_obs, 1, prob_d)
+sim_data <- data.frame(U1, U2, X1, X2, Y0, Y1, D)
+sim_data$Y <- ifelse(sim_data$D== 1, Y1, Y0)
+
+head(sim_data)
+```
+```{r draw-DAG, echo=TRUE}
+library(dagitty)
+dag <- dagitty('dag {
+  D -> Y
+  X1 -> D
+  X2 -> D
+  X1 -> Y
+  X2 -> Y
+}')
+
+plot(dag)
+```
+
+In the plot we can see that X1 and X2 are the pre treatment covarients and they effect both D and Y. D has a causal effect on Y but it's cofounded by X1 and X2.
+
+## 2.2
+
+```{r plot-showing-y0-splitbytreatment, echo=TRUE}
+library(ggplot2)
+
+sim_data %>%
+  ggplot(aes(x = Y0, fill = factor(D))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density plot of Y0 split by treatment status",
+       x = "Y0",
+       y = "Density")
+```
+
+We cannot assume that \((Y_1, Y_0) \perp D\) because we introduced selection bias when we failed to randomize. So unless we condition on X (the pre treatment covarients) we cannot assume that \((Y_1, Y_0) \perp D\) , only if we say that (\((Y_1, Y_0) \perp D | X\)
+we can assume that the potential outcomes are independent from the treatment given the pre treatment covarients.
+
+## 2.3
+
+```{r check-balance-in-covariates, echo=TRUE}
+#install.packages("tableone")
+library(tableone)
+
+tableone <- CreateTableOne(vars = c("X1", "X2"), strata = "D", data = sim_data)
+print(tableone, nonnormal = c("X1", "X2"))
+
+```
+
+When we check the balance between X1 and X2 we can see that the means are not the same for the treatment and control groups as the p-value of < 0.001 shows significant difference between groups in both cases. This means that we have selection bias and we need to control for these covariates in order to estimate the true treatment effect. In other words some people have a higher chance of being treated then others. This is not a suprise given that we failed to truly randomize our assignment.
+
+## 2.4
+
+```{r estimate-treatment-effect-naive, echo=TRUE}
+
+lm_naive <- lm(Y ~ D, data = sim_data)
+#summary(lm_naive)
+naive_ate <- coef(lm_naive)[2]
+
+true_ate <- mean(sim_data$Y1 - sim_data$Y0)
+
+cat("True ATE: ", true_ate, "\n")
+cat("Naive ATE: ", naive_ate, "\n")
+
+bias <- naive_ate - true_ate
+cat("Selection Bias: ", bias, "\n")
+```
+
+Since we have simulated data we now both potential outcomes of a unit, hence we know the true ATE - which in this case is 25000. The naive ATE is 33405.94 which is higher than the true ATE. This is because we have selection bias in our data and we failed to control for the pre treatment covariates. The selection bias is 8405.94.
+
+## 2.5
+
+```{r estimate-treatment-effect-x2covarient, echo=TRUE}
+
+lm_x2 <- lm(Y ~ D + X2, data = sim_data)
+x2_ate <- coef(lm_x2)[2]
+cat("X2 ATE: ", x2_ate, "\n")
+```
+
+When we control for X2 we can see that the ATE is 25005.27 which is much closer to the true ATE of 25000. This is because we have controlled for the one of the known selection bias that was present in our data. This makes X2 a good control variable for our treatment effect.
+
+## 2.6
+
+```{r estimate-treatment-effect-x1covarient, echo=TRUE}
+
+lm_x1 <- lm(Y ~ D + X1, data = sim_data)
+x1_ate <- coef(lm_x1)[2]
+cat("X1 ATE: ", x1_ate, "\n")
+```
+
+When we control for X1 we can see that the ATE is 34167.17 which is much further from the true ATE of 25000. This is because we have controlled for the one of the known selection bias that was present in our data. This makes X1 a bad control variable for our treatment effect.
+
+## 2.7
+
+```{r simulate-1000times, echo=FALSE}
+library(ggplot2)
+
+# Define number of simulations
+n_sim <- 1000
+n_obs <- 10000
+tau <- 25000
+
+# Store biases for each model
+bias_naive <- numeric(n_sim)
+bias_x2 <- numeric(n_sim)
+bias_x1 <- numeric(n_sim)
+
+# Monte Carlo simulation loop
+for (i in 1:n_sim) {
+  
+  # Generate fresh data
+  U1 <- rbinom(n_obs, 1, 0.5)
+  U2 <- rbinom(n_obs, 1, 0.5)
+  X2 <- sample(1:50, n_obs, replace = TRUE)
+  X1 <- 10 + 1500 * U1 + 1500 * U2 + rnorm(n_obs, mean = 0, sd = 100)
+  Y0 <- 20000 + 1000 * X2 + 1500 * U2 + rnorm(n_obs, mean = 0, sd = 1000)
+  Y1 <- Y0 + tau
+  prob_d <- pnorm(X2, mean = 50, sd = 25) + 0.5 * U1
+  prob_d <- pmin(prob_d, 1)
+  D <- rbinom(n_obs, 1, prob_d)
+  Y <- ifelse(D == 1, Y1, Y0)
+
+  # Store data in a dataframe
+  sim_data <- data.frame(U1, U2, X1, X2, Y0, Y1, D, Y)
+  
+  # Compute true ATE (from counterfactuals)
+  true_ate <- mean(sim_data$Y1 - sim_data$Y0)
+
+  # Estimate ATE under different models
+  naive_ate <- coef(lm(Y ~ D, data = sim_data))[2]
+  x2_ate <- coef(lm(Y ~ D + X2, data = sim_data))[2]   # Adding X2 to base model
+  x1_ate <- coef(lm(Y ~ D + X1, data = sim_data))[2]   # Adding X1 only (corrected for 2.6)
+
+  # Store biases
+  bias_naive[i] <- naive_ate - true_ate
+  bias_x2[i] <- x2_ate - true_ate
+  bias_x1[i] <- x1_ate - true_ate
+}
+
+# Create a data frame for visualization
+bias_data <- data.frame(
+  Bias = c(bias_naive, bias_x2, bias_x1),
+  Model = rep(c("Naïve", "With X2", "With X1"), each = n_sim)
+)
+
+# Plot histograms of the biases
+ggplot(bias_data, aes(x = Bias, fill = Model)) +
+  geom_histogram(alpha = 0.6, position = "identity", bins = 50) +
+  facet_wrap(~ Model, scales = "free") +
+  geom_vline(aes(xintercept = mean(Bias)), color = "black", linetype = "dashed") +
+  labs(
+    title = "Distribution of ATE Bias Across 1,000 Simulations",
+    x = "Bias (Estimated ATE - True ATE)",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+After running the simulation 1000 times we can see that our results were not due to chance as both the naive and X1 models have a bias that is significantly different from 0 - with bias being around 8000 which in line what we saw above. The X2 model has a bias that is much closer to 0. This is because X2 is a good control variable for our treatment effect.
+
+# Replication
+
+## 3.1
+
+Urban and Niebler used the spliover adds from competitive states to not competitive states as their treatment. They argied that this way they can isolatethe effects of television adverts since if they would compare competitive states with noncompetitive states sthey could not control for speaches, rallys etc. I dont think it can be the ccase of selcetion on-observables since they are using a natural experiment to isolate the effect of the treatment and based on geogprahy certain parts of the neighboring states will be exposed to spillover adds. So probabal we would need to control for postcodes level variables (because they used postcodes to estimate donations) such as income edication, etc. (X) in order control fro pre treatment covariets.
+
+## 3.2
+
+```{r load-data, echo=FALSE}
+library(readstata13)
+
+# Load the dta data
+dollars_data <- read.dta13("dollars_on_the_sidewalk.dta")
+
+# define binary Treated variable for TotAds > 1000 and in Noncomp = 1 states
+dollars_data$Treated <- ifelse(dollars_data$TotAds > 1000 & dollars_data$NonComp == 1, 1, 0)
+
+#colnames(dollars_data)
+
+# put Nonconp and Treated in the first columns
+dollars_data <- dollars_data %>%
+  select(Treated, TotAds, NonComp, everything())
+
+head(dollars_data)
+```
+
+After we load the data we can created the binary Treated variables for non-competitive postcodes that have received more than 1000 adds. We then reorganize the columns so that the variables that we care about - Treated, TotAds, NonComp - are the first columns. We then print the 5 five rows of the data to see if everything is in order.
+
+```{r howmany-treated-vs-nottreated, echo=TRUE}
+# How many treated vs not treated
+dollars_data %>%
+  group_by(Treated) %>%
+  summarise(n = n())
+```
+
+We can see that we have more non-treated observations than treated observations around 4 times more non-treated observations than treated observations.
+
+## 3.3
+
+```{r estimate-mean-contribution-for-each-level-treated, echo=FALSE}
+# Estimate the mean contribution for each level of the Treated variable
+dollars_data %>%
+  group_by(Treated) %>%
+  summarise(mean_contribution = mean(Cont, na.rm = TRUE))
+```
+
+```{r estimate-naive-ate, echo=TRUE}
+# Estimate Naive ATE
+lm_naive <- lm(Cont ~ Treated, data = dollars_data)
+naive_ate <- coef(lm_naive)[2]
+cat("Naive ATE: ", naive_ate, "\n")
+```
+
+When we estimate the naive ATE we can see that the naive ATE is 0.313 which is the difference in the mean contribution between the treated and non-treated observations. This is not the true ATE since we have selection bias in our data and we need to control for the pre treatment covariates.
+
+## 3.4
+
+```{r propensity-score-matching-2, echo=FALSE}
+# Select desired columns and remove missing values before logistic regression
+selected_data <- dollars_data %>%
+  select(Treated, Cont, TotalPop, MedianHHInc, PercentOver65, PercentWhite, PercentBlack, 
+         PercentHispanic, Rural, Urban, repvote00, repvote04, RepubVote, RepubShare, 
+         per_hsgrads, per_collegegrads, density) %>%
+  na.omit()
+
+# Fit a logistic regression for the propensity score
+ps_model <- glm(Treated ~ TotalPop + MedianHHInc + PercentOver65 + PercentWhite + 
+                  PercentBlack + PercentHispanic + Rural + Urban + repvote00 + repvote04 + 
+                  RepubVote + RepubShare + per_hsgrads + per_collegegrads + density, 
+                data = selected_data, family = binomial(link = "logit"))
+
+# Add the propensity score to the dataset
+selected_data$pscore <- predict(ps_model, type = "response")
+
+# Reorganize the columns so pscor is the first column
+selected_data <- selected_data %>%
+  select(pscore, everything())
+
+selected_data %>%
+  head()
+```
+
+Here we manually selected the columns that we think will be the most useful for our model. These are Demographic columns such as TotalPop, ethinicity and Age, Political columns such as repvote00, repvote04, RepubVote, RepubShare and Socieconomic columns such as per_hsgrads, per_collegegrads. I would've like to use an algorithm to try to select column that contribute most to the model automatically instead selecting column manually but due to lack of time I had to do it manually. Also I dropped the columns that had missing values, which again is not ideal given that might be reason that some values are missing so ideally I would've used a package called MICE to impute the missing values - but had to drop them due to time constraints. Luckily only 50 ish rows had to be dropped out of more than 30,000 rows so it should not have a big impact on the results.
+
+We then fit a logistic regression model to estimate the propensity score and add it to the dataset. We then reorganize the columns so that the propensity score is the first column. We then print the first 5 rows of the data to see if everything is in order.
+
+## 3.5
+
+```{r plot-pscore-distribution-for-Treated, echo=FALSE}
+# Plot the distribution of the propensity score for the treated and non-treated observations
+selected_data %>%
+  ggplot(aes(x = pscore, fill = factor(Treated))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density plot of the propensity score split by treatment status",
+       x = "Propensity Score",
+       y = "Density")
+```
+
+After plotting the distribution of the propensity score for the treated and non-treated observations we can see that the propensity score is not well balanced between the treated and non-treated observations - aka we have observations that are treated but should have been in the control and vice versa. This is not ideal since if we want to do propensity score mathcing we need to make sure that the propensity score is well balanced between the treated and non-treated observations.
+
+## 3.6
+
+```{r propensity-score-matching, echo=FALSE}
+# Perform propensity score matching
+library(MatchIt)
+
+# Create a MatchIt object
+match_model <- matchit(Treated ~ pscore, data = selected_data, method = "nearest", replace = TRUE)
+
+# Summary of the matching
+summary(match_model)
+
+# Match the data
+matched_data <- match.data(match_model)
+```
+
+After performing the propensity score matching we can see that we ended up with only 11,000 observations (5000 control and 6000 treated) which is not ideal since we lost more than 1/3 of our data. This is because the propensity score was not well balanced between the treated and non-treated observations. 
+
+## 3.7
+
+```{r balance-in-pretreatment-covariates, echo=FALSE}
+# Check balance in pre-treatment covariates before matching
+print(tableone_before <- CreateTableOne(vars = c("TotalPop", "MedianHHInc", "PercentOver65", "PercentWhite", 
+                                           "PercentBlack", "PercentHispanic", "Rural", "Urban", 
+                                           "repvote00", "repvote04", "RepubVote", "RepubShare", 
+                                           "per_hsgrads", "per_collegegrads", "density"), 
+                                  strata = "Treated", data = selected_data))
+
+# Check balance in pre-treatment covariates after matching
+print(tableone_after <- CreateTableOne(vars = c("TotalPop", "MedianHHInc", "PercentOver65", "PercentWhite", 
+                                          "PercentBlack", "PercentHispanic", "Rural", "Urban", 
+                                          "repvote00", "repvote04", "RepubVote", "RepubShare", 
+                                          "per_hsgrads", "per_collegegrads", "density"), 
+                                 strata = "Treated", data = matched_data))
+
+
+```
+
+After comparing the balance in the pre-treatment covariates before and after matching we can see that the p-values of many covariates that were significant before are now not significant after matching. This is no good since we want to make sure that the pre-treatment covariates are well balanced between the treated and non-treated observations because if they are not well balanced we cannot assume that the potential outcomes are independent of the treatment given the pre-treatment covariates. In other words we introduced selection bias in our data when we matched and hence we cannot assume that the potential outcomes are independent of the treatment given the pre-treatment covariates.
+
+## 3.8
+
+```{r estimate-treatment-treated, echo=FALSE}
+# Subset the treated group and their matched controls
+treated_units <- matched_data %>% filter(Treated == 1)
+control_units <- matched_data %>% filter(Treated == 0)
+
+# Calculate the mean outcome for each group
+mean_treated <- mean(treated_units$Cont, na.rm = TRUE)
+mean_control <- mean(control_units$Cont, na.rm = TRUE)
+
+# Estimate ATT as the difference-in-means
+att_estimate <- mean_treated - mean_control
+
+# print
+cat("Estimated ATT (Difference-in-Means):", round(att_estimate, 2), "\n")
+```
+
+## 3.9
+When evaluating the research design used in this study, several concerns arise regarding the validity of the causal inference drawn. 
+
+A key concern is whether the researcher identified the correct set of pre-treatment covariates (X) to effectively control for confounding factors. For instance, individuals living near state borders are more likely to be exposed to spillover campaign ads from the neighboring state. However, these individuals might work, shop, or socialize across the border, meaning their exposure to campaign activity is not limited to their state of residence. This cross-border exposure introduces unmeasured confounding, as the interactions and political messaging they encounter while in the neighboring state remain unaccounted for.
+
+Another potential problem lies in the propensity score matching employed. The imbalance observed in the propensity scores indicates that after matching we most likely introduce selection bias when we match. This is problematic because the matching process should ensure that the treated and control groups are comparable on observed characteristics. 
+
+To address this, the researchers should have considered alternative approaches, such as:
+
+Inverse Probability Weighting (IPW), Covariate Adjustment or Doubly Robust Estimation - Combining IPW and regression adjustment provides additional protection against model misspecification.
+
+\clearpage
+# Code appendix
+```{r ref.label = knitr::all_labels(), echo=TRUE, eval=FALSE}
+# this chunk generates the complete code appendix. 
+# eval=FALSE tells R not to re-run (``evaluate'') the code here. 
+```

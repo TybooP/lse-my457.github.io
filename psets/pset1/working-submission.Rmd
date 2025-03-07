@@ -1,7 +1,7 @@
 ---
-title: "MY457: Problem Set Template"
+title: "MY457: Problem Set One"
 date:  "`r format(Sys.time(), '%a/%d/%b')`"
-author: "[Your Name Here]"
+author: "Peter Tiborcz"
 always_allow_html: true
 output: 
   bookdown::pdf_document2:
@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, linewidth=60)
 
 # you can include your libraries here:
 library(tidyverse)
-install.packages("report")
+#install.packages("report")
 library(report)
 
 # and any other options in R:
@@ -23,16 +23,16 @@ options(scipen=999)
 
 ```
 
-# 1 Concepts
+# Concepts
 
-We going to talk about a simple study of the effect of treatment $$
+Consider a simple study of the effect of a treatment: $$
 D_i \in \{0,1\} \text{ on } Y_i \text{ for all } i \in \{1,2,3,\dots,N\}$$
 
-## 1.1
+##
 
-$Y_{i1}$ means the potential outcome of the i unit observation in our treatment group. This situation of $Y_{i}$ having the same quantity as $Y_{i1}$ is only possible when all of our units of i are treated.
+$Y_{i1}$  represents the potential outcome for unit  if they receive treatment (D=1). This situation of $Y_{i}$ having the same quantity as $Y_{i1}$ is only possible when the unit i is treated.
 
-## 1.2
+##
 
 The difference between $E[Y_{i0} \mid D_i = 1]$ and $E[Y_{i0} \mid D_i = 0]$ is that the first one cannot be observed, while the second one we can observe.
 
@@ -40,15 +40,19 @@ I would expect these quantities to be equal when we randomly select the units to
 
 We would expect these to be unequal when the treatment is not randomly assigned. This is because the potential outcomes are not randomly assigned, so the treatment is not randomly assigned.
 
-## 1.3
+##
+Random assignment ensures that the treatment and control groups are statistically identical on average before treatment. This allows us to estimate the Average Treatment Effect (ATE).
 
-By using a random assignment for our treatment (D=1) and control (D=0) groups helps us identify the average treatment effect (ATE) because we can compare the group level averages of potential outcomes of treatment and control and we dont have to worry about selection bias.
+Since randomization removes systematic differences between groups, any difference in outcomes can be attributed to the treatment itself rather than confounding factors.
+
 
 \clearpage
 
-# 2 Simulations
+# Simulations
 
-## 2.1
+##
+
+The following R code generates a dataset with 500 observations, a treatment effect of 5000, and several characteristics:
 
 ```{r generate-data}
 set.seed(123)
@@ -66,40 +70,36 @@ D = sample(c(0, 1), n, replace = TRUE),
 Y = ifelse(D== 1, Y1, Y0)
 )
 
-data
+head(data, 10)
 ```
 
-The code above generates a dataset with 500 observations (n), a treatment effect of 5000 (tau), and four variables: Age with mean of 42 years of age with a standard deviation of 10 years, Education with 4 different categories represented by numbers 1 to 4, the binary variable D which is the treatment assignment and Y outcome variable (Y). Because we simulated the data we can also simulate both potential outcomes for each observation which are the Y1 and Y0 variables. We set the seed to 123 to ensure reproducibility.
+  - Age is generated from a normal distribution with a mean of 42 and a standard deviation of 10.
 
-## 2.2
+  - Education is randomly assigned one of four categories.
 
-```{r explore-data, warning=FALSE, fig.width=8, fig.height=6}}
-# Perform t-test for Age
-t_test_age <- t.test(Age ~ D, data = data)
+  - Y0 represents the baseline outcome (without treatment), drawn from a normal distribution with a mean of 50,000.
 
-# Perform t-test for Education
-t_test_edu <- t.test(Education ~ D, data = data)
+  - Y1 is the potential outcome if treated, which is Y0 + tau.
 
+  - D is the treatment indicator, randomly assigned.
+
+  - Y is the observed outcome, which depends on D. 
+
+Because we simulated the data we can also simulate both potential outcomes for each observation which are the Y1 and Y0 variables. We set the seed to 123 to ensure reproducibility.
+
+##
+
+To ensure that randomization successfully balances covariates, we conduct t-tests comparing Age and Education across treatment and control groups.
+
+```{r explore-data, warning=FALSE}
 # Print results using report package
-report::report(t_test_age)
-report::report(t_test_edu)
-
+report::report(t.test(Age ~ D, data = data))
+report::report(t.test(Education ~ D, data = data))
 ```
 
 Both Age and Education are balanced across treatment (D=1) and control (D=0) groups, as there are no statistically significant differences in means. This supports the randomization assumption that the two groups are comparable.
 
-## 2.3
-
-First lets plot the distribution of the potential outcomes $Y_0$ and $Y_1$.
-
-```{r visualise-potential-outcomes, fig.width=8, fig.height=6}
-data %>% 
-  ggplot(aes(x = Y0)) +
-  geom_density(aes(fill = "Y0"), alpha = 0.5) +
-  geom_density(aes(x = Y1, fill = "Y1"), alpha = 0.5) +
-  theme_minimal() +
-  labs(title = "Potential Outcomes", x = "Y", y = "Density")
-```
+##
 
 To figure out the difference in means between the potential outcomes $Y_0$ and $Y_1$ we can use the following code:
 
@@ -110,13 +110,16 @@ diffINmeans
 ```
 
 Given that the treatment effect (tau) was set to 5000, but the estimated effect is 4181.018, the estimate is  lower than the true effect. The discrepancy may be due to randomization variability or sampling variability.
-```{r}
+
+```{r t-test-linear-regression}
 report::report(t.test(Y ~ D, data = data))
 ```
 
-## 2.4
+##
 
-```{r visualise-the-distribution of-Y-by-treatment-status, fig.width=8, fig.height=6}
+We visualize the outcome distribution across treatment groups:
+
+```{r visualise-the-distribution of-Y-by-treatment-status}
 # Plot the distribution of Y conditional on D
 ggplot(data, aes(x = Y, fill = as.factor(D))) +
   geom_density(alpha = 0.5) +
@@ -127,7 +130,9 @@ ggplot(data, aes(x = Y, fill = as.factor(D))) +
   theme_minimal()
 ```
 
-```{r}
+We then estimate the ATE using two approaches:
+
+```{r linear-regression}
 diffInMeans <- mean(data$Y[data$D == 1]) - mean(data$Y[data$D == 0])
 print(diffInMeans)
 
@@ -136,11 +141,13 @@ summary(lm_model)
 
 ```
 
-Both implementation gave the same 4181.018 results.  
+Difference-in-means and OLS regression should produce similar estimates if randomization is successful.  
 
-## 2.5
+##
 
-```{r}
+We run 1,000 simulations to verify that our ATE estimate is not due to chance:
+
+```{r simulate-ate}
 # Set parameters
 n_simulations <- 1000
 tau <- 5000
@@ -188,13 +195,15 @@ ggplot(data.frame(ate_differences), aes(x = ate_differences)) +
   theme_minimal()
 ```
 
-After simulating 1000 data generations, the estimated ATE averageis really close to 0.
+After simulating 1000 data generations, the estimated ATE averages really close to 0 suggesting an unbiased estimation.
 
-# 3. Replication
+# Replication
 
-## 3.1
+##
 
-```{r}
+We begin by loading the dataset and creating a new binary variable sd_onefem2014, which takes the value 1 if at least one woman was elected in 2014, and 0 otherwise:
+
+```{r import-data}
 #install.packages("readstata13")
 library(readstata13)
 
@@ -204,11 +213,17 @@ electwomen_data <- read.dta13("how_to_elect_more_women.dta")
 # Create sd_onefem2014 dummy variable from prop_sd_fem2014
 electwomen_data <- electwomen_data %>%
   mutate(sd_onefem2014 = ifelse(prop_sd_fem2014 > 0, 1, 0))
+
+colnames(electwomen_data)
 ```
 
-## 3.2
+This transformation allows us to assess how treatment conditions impact the likelihood of electing at least one woman. We can printed out the column names to ensure that the new variable was created.
 
-```{r}
+##
+
+To verify the distribution of precincts across conditions, we compute the count and proportion of precincts in each group:
+
+```{r balance-check}
 # Ensure there are no missing values
 data <- electwomen_data %>% mutate(prop_sd_fem2014 = ifelse(is.na(prop_sd_fem2014), 0, prop_sd_fem2014))
 
@@ -225,9 +240,13 @@ condition_summary <- electwomen_data %>%
 print(condition_summary)
 ```
 
-## 3.3
+The summary table confirms whether randomization achieved balanced group sizes and provides insight into how treatment affected women’s representation.
 
-```{r}
+##
+
+To check if treatment groups were balanced, we conduct pairwise t-tests on two pre-treatment variables: agecat (age category) and race.
+
+```{r balance-check-t-test}
 #test balance in pre-treatment variables of "agecat" and "race" betwen different conditions
 # Define pre-treatment variables
 pre_treatment_vars <- c("agecat", "race")
@@ -255,11 +274,11 @@ for (var in pre_treatment_vars) {
 
 No t test is significant, so we can say that the randomization was successful.
 
-## 3.4
+##
 
-```{r}
-library(dplyr)
+To measure the effect of each intervention, we estimate the ATE using separate regressions:
 
+```{r estimate-ate}
 # Function to run linear regression for ATE estimation
 estimate_ate <- function(treatment_group) {
   # Subset to only include Control and the current treatment group
@@ -281,12 +300,31 @@ treatment_groups <- c("Demand", "Supply", "Supply+Demand")
 for (treatment in treatment_groups) {
   estimate_ate(treatment)
 }
-
 ```
 
-## 3.5
+This method isolates the effect of each intervention. The results show that each treatment increased the likelihood of elect
 
+##
 
+Instead of separate regressions, we now estimate all treatment effects simultaneously using a single regression model:
+
+```{r estimate-ate-simultaneously}
+# Create dummy variables for each treatment group
+electwomen_data <- electwomen_data %>%
+  mutate(
+    treatment_demand = ifelse(condition == "Demand", 1, 0),
+    treatment_supply = ifelse(condition == "Supply", 1, 0),
+    treatment_supply_demand = ifelse(condition == "Supply+Demand", 1, 0)
+  )
+
+# Run a single regression with all treatment groups
+full_model <- lm(sd_onefem2014 ~ treatment_demand + treatment_supply + treatment_supply_demand, data = electwomen_data)
+
+# Print results
+summary(full_model)
+```
+
+This model allows us to compare the effects of all treatments while accounting for potential shared variance across groups. After simultaneously estimating the ATE of the different treatments we found that that the coefficients of each individual treatment are the exactly the same as when we estimated them individually. The intercept is also the same. Similarly we found that the t test also resulted in the same results as before. Doing them simultaneously did not resulst any changes in the results.
 
 # Code appendix
 

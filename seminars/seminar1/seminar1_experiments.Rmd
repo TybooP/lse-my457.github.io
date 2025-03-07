@@ -35,7 +35,7 @@ Now, let's simulate some data on the basis of the DAG above. We will generate 10
 
 ```{r generate_data}
 N = 1000
-TE = 1
+TE = 1 # Constant treatment effect
   
 data = tibble(
   X = rnorm(N),
@@ -123,6 +123,10 @@ data_simple = data %>%
          Y = Y1*D + Y0*(1-D)) 
 
 mean(data_simple$D)
+
+# Use randomiser package to implement complete randomization
+#install.packages('randomizeR', dependencies = TRUE)
+#library(randomizeR)
 
 # Second, complete randomization: 
 data_complete = slice(data, sample(1:n())) %>%
